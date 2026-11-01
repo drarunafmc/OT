@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>OT Planner</title>
+<style>
+:root{--bg:#f4f6f8;--card:#fff;--tx:#1b2430;--mu:#66727f;--ac:#0b6e6e;--ac2:#fff;--bd:#d5dbe1;--dg:#b3261e;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12171c;--card:#1c232b;--tx:#e8edf2;--mu:#9aa6b2;--ac:#3fb8b0;--ac2:#06201f;--bd:#33404c;--dg:#ff8a80}}
+:root[data-theme="dark"]{--bg:#12171c;--card:#1c232b;--tx:#e8edf2;--mu:#9aa6b2;--ac:#3fb8b0;--ac2:#06201f;--bd:#33404c;--dg:#ff8a80}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{padding:14px 16px;background:var(--ac);color:var(--ac2);font-weight:700;font-size:18px}
+main{max-width:640px;margin:0 auto;padding:12px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin-bottom:12px}
+label{display:block;font-size:12px;color:var(--mu);margin:8px 0 3px;min-height:26px;line-height:26px}
+input,select,textarea,button{font:inherit;color:var(--tx);width:100%;padding:10px;border:1px solid var(--bd);border-radius:8px;background:var(--bg)}
+.row{display:flex;gap:8px}.row>div{flex:1}
+button{background:var(--ac);color:var(--ac2);border:0;font-weight:600;margin-top:12px}
+button.sec{background:transparent;color:var(--ac);border:1px solid var(--ac)}
+button.sm{width:auto;margin:0;padding:6px 10px;font-size:13px}
+button.mic{float:right;width:auto;margin:0;padding:2px 10px;font-size:14px;background:transparent;color:var(--ac);border:1px solid var(--ac)}
+button.on{background:var(--dg);color:#fff;border-color:var(--dg)}
+.case{border-left:4px solid var(--ac)}
+.case h3{margin:0 0 2px;font-size:16px}
+.meta{color:var(--mu);font-size:13px}
+.hint{font-size:12px;color:var(--mu);margin-top:6px}
+.acts{display:flex;gap:8px;margin-top:8px}
+.del{background:transparent;color:var(--dg);border:1px solid var(--dg)}
+.empty{text-align:center;color:var(--mu);padding:20px}
+#msg{font-size:13px;color:var(--mu);margin-top:8px;min-height:18px}
+</style>
+</head>
+<body>
+<header>OT Planner</header>
+<main>
+<div class="card">
+  <div id="formTitle" style="font-weight:600">Add case</div>
+  <button id="vfill" class="sec" type="button">🎤 Speak full case</button>
+  <div class="hint">Say: “consultant R N, OT consultant, name …, age 45, sex male, UHID …, mobile …, diagnosis …, surgery …”. Pick the date manually. Tap the mic again to stop.</div>
+  <label>Consultant</label>
+  <select id="cons"></select>
+  <label>OT</label>
+  <select id="ot"><option>Consultant</option><option>Fellow</option></select>
+  <label>OT NO</label>
+  <select id="otno"><option>4</option><option>5</option><option>6</option><option>7</option></select>
+  <label>Name</label><input id="name" autocomplete="off">
+  <div class="row">
+    <div><label>Age</label><input id="age" type="number" inputmode="numeric" min="0" max="120"></div>
+    <div><label>Sex</label><select id="sex"><option>M</option><option>F</option></select></div>
+  </div>
+  <label>UHID</label><input id="uhid" autocomplete="off">
+  <label>Mobile no</label><input id="mob" type="tel" inputmode="tel" autocomplete="off">
+  <label>Diagnosis</label><textarea id="dx" rows="2"></textarea>
+  <label>Surgery</label><textarea id="surg" rows="2"></textarea>
+  <label>PDOS (planned date of surgery)</label><input id="pdos" type="date">
+  <button id="save">Save case</button>
+  <button id="cancel" class="sec" style="display:none">Cancel edit</button>
+  <div id="msg"></div>
+</div>
+
+<div class="card">
+  <div class="row">
+    <div><label>Filter by date</label><input id="fdate" type="date"></div>
+    <div><label>Consultant</label><select id="fcons"></select></div>
+  </div>
+  <button id="pdf">Download PDF of list below</button>
+  <button id="clear" class="sec">Clear filters</button>
+</div>
+
+<div id="list"></div>
+</main>
+
+<script src="jspdf.umd.min.js"></script>
+<script>
+(function(){
+var KEY="ot_cases_v1",LK="ot_lists_v1",cases=[],editId=null;
+var lists={cons:["RN","SJ","SK","PS"]};
+var $=function(i){return document.getElementById(i)};
+function msg(t){$("msg").textContent=t}
+function load(){try{cases=JSON.parse(localStorage.getItem(KEY)||"[]")||[]}catch(e){cases=[]}
+  try{var s=JSON.parse(localStorage.getItem(LK));if(s&&s.cons)lists={cons:s.cons}}catch(e){}}
+function store(){try{localStorage.setItem(KEY,JSON.stringify(cases))}catch(e){msg("Could not save on this device.")}}
+function storeL(){try{localStorage.setItem(LK,JSON.stringify(lists))}catch(e){}}
+function fmt(d){if(!d)return"";var p=d.split("-");return p[2]+"/"+p[1]+"/"+p[0]}
+function esc(s){var e=document.createElement("div");e.textContent=s==null?"":s;return e.innerHTML}
+
+/* dropdowns */
+function opts(id,key,blank,canAdd){
+  var s=$(id),cur=s.value,h=blank!==null?'<option value="">'+blank+'</option>':"";
+  lists[key].forEach(function(n){h+='<option>'+esc(n)+'</option>'});
+  if(canAdd)h+='<option value="__new">+ Add new…</option>';
+  s.innerHTML=h;s.value=cur;if(s.selectedIndex<0)s.selectedIndex=0;
+}
+function refreshOpts(){opts("cons","cons",null,true);opts("fcons","cons","All",false)}
+function addNew(id,key,label){
+  var n=prompt("New "+label+" (name or initials):");n=(n||"").trim();
+  if(n&&lists[key].indexOf(n)<0){lists[key].push(n);storeL();refreshOpts()}
+  if(n)$(id).value=n;else $(id).selectedIndex=0;
+}
+$("cons").onchange=function(){if(this.value==="__new")addNew("cons","cons","consultant")};
+
+/* list + form */
+function filtered(){
+  var d=$("fdate").value,c=$("fcons").value;
+  return cases.filter(function(x){return(!d||x.pdos===d)&&(!c||x.cons===c)})
+    .sort(function(a,b){var ra=a.ot==="Fellow"?1:0,rb=b.ot==="Fellow"?1:0;return(a.pdos||"9").localeCompare(b.pdos||"9")||(ra-rb)||(a.cons||"").localeCompare(b.cons||"")||(a.otno||"").localeCompare(b.otno||"")||a.name.localeCompare(b.name)});
+}
+function render(){
+  var l=filtered(),h="";
+  if(!l.length)h='<div class="empty">No cases yet.</div>';
+  l.forEach(function(x){
+    h+='<div class="card case"><h3>'+esc(x.name)+' <span class="meta">'+esc(x.age)+'/'+esc(x.sex)+'</span></h3>'+
+    '<div class="meta">UHID '+esc(x.uhid)+' · '+esc(x.cons)+(x.ot?' · OT: '+esc(x.ot):'')+(x.otno?' · OT No '+esc(x.otno):'')+' · PDOS '+fmt(x.pdos)+'</div>'+
+    (x.mob?'<div class="meta">Mobile '+esc(x.mob)+'</div>':'')+
+    '<div style="margin-top:6px"><b>Dx:</b> '+esc(x.dx)+'</div><div><b>Surgery:</b> '+esc(x.surg)+'</div>'+
+    '<div class="acts"><button class="sm sec" data-e="'+x.id+'">Edit</button><button class="sm del" data-d="'+x.id+'">Delete</button></div></div>';
+  });
+  $("list").innerHTML=h;
+}
+function reset(){editId=null;["name","age","uhid","mob","dx","surg"].forEach(function(i){$(i).value=""});
+  $("formTitle").textContent="Add case";$("cancel").style.display="none";$("save").textContent="Save case"}
+$("save").onclick=function(){
+  var r={cons:$("cons").value,ot:$("ot").value,otno:$("otno").value,name:$("name").value.trim(),age:$("age").value,sex:$("sex").value,uhid:$("uhid").value.trim(),mob:$("mob").value.trim(),dx:$("dx").value.trim(),surg:$("surg").value.trim(),pdos:$("pdos").value};
+  if(!r.name||!r.pdos){msg("Name and PDOS are required.");return}
+  if(editId){cases=cases.map(function(x){return x.id===editId?Object.assign({id:editId},r):x})}
+  else{r.id=Date.now().toString(36)+Math.random().toString(36).slice(2,5);cases.push(r)}
+  store();reset();msg("Saved.");render();
+};
+$("cancel").onclick=reset;
+$("list").onclick=function(e){
+  var d=e.target.getAttribute("data-d"),ed=e.target.getAttribute("data-e");
+  if(d&&confirm("Delete this case?")){cases=cases.filter(function(x){return x.id!==d});store();render()}
+  if(ed){var x=cases.filter(function(c){return c.id===ed})[0];if(!x)return;editId=ed;
+    $("cons").value=x.cons;$("ot").value=x.ot||"Consultant";$("otno").value=x.otno||"4";$("name").value=x.name;$("age").value=x.age;$("sex").value=x.sex;$("uhid").value=x.uhid;$("mob").value=x.mob||"";$("dx").value=x.dx;$("surg").value=x.surg;$("pdos").value=x.pdos;
+    $("formTitle").textContent="Edit case";$("save").textContent="Update case";$("cancel").style.display="block";window.scrollTo(0,0)}
+};
+$("fdate").onchange=$("fcons").onchange=render;
+$("clear").onclick=function(){$("fdate").value="";$("fcons").value="";render()};
+
+/* voice */
+var SR=window.SpeechRecognition||window.webkitSpeechRecognition,rec=null,recBtn=null;
+function stopRec(){if(rec){try{rec.stop()}catch(e){}}}
+function listen(btn,cb){
+  var CP=window.Capacitor&&window.Capacitor.Plugins&&window.Capacitor.Plugins.SpeechRecognition;
+  if(CP){
+    if(btn.classList.contains("on"))return;
+    btn.classList.add("on");msg("Listening…");
+    CP.requestPermissions().then(function(p){
+      if(p&&p.speechRecognition&&p.speechRecognition!=="granted"){throw new Error("perm")}
+      return CP.start({language:"en-IN",maxResults:1,prompt:"Speak now",partialResults:false,popup:true});
+    }).then(function(r){
+      btn.classList.remove("on");
+      var t=r&&r.matches&&r.matches[0]?r.matches[0].trim():"";
+      if(t)cb(t);else msg("Didn’t hear anything.");
+    }).catch(function(e){btn.classList.remove("on");msg(e&&e.message==="perm"?"Microphone permission blocked.":"Voice not available.")});
+    return;
+  }
+  if(!SR){msg("Voice input is not supported in this browser. Try Chrome.");return}
+  if(rec){var same=recBtn===btn;stopRec();if(same)return;}
+  var r=new SR(),text="";
+  r.lang="en-IN";r.interimResults=false;r.continuous=true;
+  r.onresult=function(e){text="";for(var i=0;i<e.results.length;i++)text+=e.results[i][0].transcript+" "};
+  r.onerror=function(e){msg(e.error==="not-allowed"||e.error==="service-not-allowed"?"Microphone permission blocked.":"Voice error: "+e.error)};
+  r.onend=function(){btn.classList.remove("on");if(rec===r){rec=null;recBtn=null}text=text.trim();if(text)cb(text)};
+  rec=r;recBtn=btn;btn.classList.add("on");msg("Listening… tap the mic again to stop.");
+  try{r.start()}catch(e){btn.classList.remove("on");rec=null}
+}
+function title(s){return s.replace(/\b\w/g,function(c){return c.toUpperCase()})}
+var FIELDS={
+  name:function(v){return title(v)},
+  age:function(v){var m=v.match(/\d+/);return m?m[0]:""},
+  uhid:function(v){return v.replace(/\s+/g,"").toUpperCase()},
+  mob:function(v){return v.replace(/[^\d+]/g,"")},
+  dx:function(v){return v},
+  surg:function(v){return v}
+};
+["name","age","uhid","mob","dx","surg"].forEach(function(id){
+  var lab=$(id).previousElementSibling,b=document.createElement("button");
+  b.type="button";b.className="mic";b.textContent="🎤";b.setAttribute("aria-label","Speak "+id);
+  lab.appendChild(b);
+  b.onclick=function(){listen(b,function(t){
+    var v=FIELDS[id](t);
+    if(id==="dx"||id==="surg"){var o=$(id).value.trim();$(id).value=o?o+" "+v:v}else $(id).value=v;
+    msg("Filled "+id+".");
+  })};
+});
+function pick(id,list,v,label){
+  var k=v.replace(/[^a-z0-9]/gi,"").toLowerCase(),hit=null;
+  list.forEach(function(n){if(!hit&&n.replace(/[^a-z0-9]/gi,"").toLowerCase()===k)hit=n});
+  if(!hit&&k.length>2)list.forEach(function(n){if(!hit&&n.toLowerCase().indexOf(v.toLowerCase())>-1)hit=n});
+  if(hit){$(id).value=hit;return true}
+  msg(label+" “"+v+"” is not in the list — add it with “+ Add new…”.");return false;
+}
+function parseCase(t){
+  var re=/\b(ot\s*(?:no|number)\b|ot|consultant|name|age|sex|gender|uhid|mobile|phone|diagnosis|surgery|procedure)\b/gi,m,hits=[];
+  while((m=re.exec(t)))hits.push({k:m[1].toLowerCase().replace(/\s+/g,""),s:m.index,e:re.lastIndex});
+  var got=[];
+  hits.forEach(function(h,i){
+    var v=t.slice(h.e,i+1<hits.length?hits[i+1].s:t.length).replace(/^[\s:,\-]+|[\s,.]+$/g,"");
+    if(!v)return;
+    switch(h.k){
+      case"consultant":if(pick("cons",lists.cons,v,"Consultant"))got.push("consultant");break;
+      case"otno":case"otnumber":var W2={four:"4",for:"4",five:"5",six:"6",seven:"7"},n2=(v.match(/[4-7]/)||[])[0]||W2[v.toLowerCase().split(/\s+/)[0]];if(n2){$("otno").value=n2;got.push("OT no")}break;
+      case"ot":$("ot").value=/^f/i.test(v)?"Fellow":"Consultant";got.push("OT");break;
+      case"name":$("name").value=FIELDS.name(v);got.push("name");break;
+      case"age":var a=FIELDS.age(v);if(a){$("age").value=a;got.push("age")}break;
+      case"sex":case"gender":$("sex").value=/^f/i.test(v)?"F":"M";got.push("sex");break;
+      case"uhid":$("uhid").value=FIELDS.uhid(v);got.push("UHID");break;
+      case"mobile":case"phone":$("mob").value=FIELDS.mob(v);got.push("mobile");break;
+      case"diagnosis":$("dx").value=v;got.push("diagnosis");break;
+      case"surgery":case"procedure":$("surg").value=v;got.push("surgery");break;
+    }
+  });
+  return got;
+}
+$("vfill").onclick=function(){var b=this;listen(b,function(t){
+  var got=parseCase(t);
+  if(got.length)msg("Filled: "+got.join(", ")+". Check, set the date, then save.");
+  else msg("Didn’t catch any field labels. Heard: "+t);
+})};
+
+/* pdf */
+$("pdf").onclick=async function(){
+  var l=filtered();
+  if(!l.length){msg("Nothing to export.");return}
+  if(!window.jspdf){msg("PDF library did not load. Check connection.");return}
+  var doc=new window.jspdf.jsPDF({orientation:"landscape",unit:"mm",format:"a4"});
+  var cols=[["#",8],["PDOS",22],["Cons",14],["OT",20],["OT NO",12],["Name",36],["Age/Sex",16],["UHID",28],["Mobile",24],["Diagnosis",50],["Surgery",47]];
+  var x0=10,y=14,W=277;
+  function head(){
+    doc.setFont("helvetica","bold");doc.setFontSize(14);doc.text("OT Plan",x0,y);
+    doc.setFontSize(9);doc.setFont("helvetica","normal");
+    var sub=[$("fdate").value?"Date: "+fmt($("fdate").value):"All dates",$("fcons").value?"Consultant: "+$("fcons").value:"All consultants"].join("  |  ");
+    doc.text(sub,x0+30,y);doc.text("Generated "+new Date().toLocaleDateString("en-GB"),x0+W,y,{align:"right"});
+    y+=6;doc.setFont("helvetica","bold");doc.setFillColor(220,230,230);doc.rect(x0,y-4,W,6,"F");
+    var x=x0;cols.forEach(function(c){doc.text(c[0],x+1,y);x+=c[1]});
+    doc.setFont("helvetica","normal");y+=5;
+  }
+  head();
+  var gk="";
+  l.forEach(function(r,i){
+    var key=(r.pdos||"")+"|"+(r.ot==="Fellow"?"Fellow":"Consultant")+"|"+r.cons;
+    if(key!==gk){gk=key;
+      if(y+14>196){doc.addPage();y=14;head()}
+      doc.setFont("helvetica","bold");doc.setFillColor(238,242,242);doc.rect(x0,y-4,W,6,"F");
+      doc.text(fmt(r.pdos)+"  |  "+(r.ot==="Fellow"?"Fellow OT":"Consultant OT")+"  |  "+r.cons,x0+1,y);
+      doc.setFont("helvetica","normal");y+=6}
+    var v=[String(i+1),fmt(r.pdos),r.cons,r.ot||"",r.otno||"",r.name,r.age+"/"+r.sex,r.uhid,r.mob||"",r.dx,r.surg];
+    var lines=v.map(function(t,k){return doc.splitTextToSize(t||"",cols[k][1]-2)});
+    var n=Math.max.apply(null,lines.map(function(a){return a.length}));
+    var h=n*4+2;
+    if(y+h>196){doc.addPage();y=14;head()}
+    var x=x0;lines.forEach(function(a,k){doc.text(a,x+1,y);x+=cols[k][1]});
+    y+=h;doc.setDrawColor(200);doc.line(x0,y-3,x0+W,y-3);
+  });
+  var fn="OT_plan_"+($("fdate").value||new Date().toISOString().slice(0,10))+".pdf";
+  try{
+    var P=window.Capacitor&&window.Capacitor.Plugins;
+    if(P&&P.Filesystem&&P.Share){
+      var b64=doc.output("datauristring").split(",")[1];
+      var f=await P.Filesystem.writeFile({path:fn,data:b64,directory:"CACHE"});
+      msg("PDF ready.");
+      await P.Share.share({title:fn,url:f.uri,dialogTitle:"Save / print / send PDF"});
+    }else{
+      var u=URL.createObjectURL(doc.output("blob")),a=document.createElement("a");
+      a.href=u;a.download=fn;document.body.appendChild(a);a.click();a.remove();
+      setTimeout(function(){URL.revokeObjectURL(u)},4000);msg("PDF ready.");
+    }
+  }catch(e){msg("Could not save PDF.")}
+};
+load();refreshOpts();render();
+})();
+</script>
+</body>
+</html>
