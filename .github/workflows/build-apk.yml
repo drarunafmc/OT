@@ -1,7 +1,6 @@
 name: Build APK
 on:
   push:
-    branches: [main, master]
   workflow_dispatch:
 jobs:
   build:
@@ -15,11 +14,20 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-      - run: npm ci
+      - name: Find project folder
+        run: |
+          F=$(find . -name package.json -not -path '*/node_modules/*' | head -1)
+          echo "Found: $F"
+          echo "APP_DIR=$(dirname "$F")" >> $GITHUB_ENV
+      - run: npm install
+        working-directory: ${{ env.APP_DIR }}
       - run: npx cap sync android
+        working-directory: ${{ env.APP_DIR }}
       - run: chmod +x android/gradlew
-      - run: cd android && ./gradlew assembleDebug
+        working-directory: ${{ env.APP_DIR }}
+      - run: ./gradlew assembleDebug
+        working-directory: ${{ env.APP_DIR }}/android
       - uses: actions/upload-artifact@v4
         with:
           name: OT-Planner-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.APP_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
