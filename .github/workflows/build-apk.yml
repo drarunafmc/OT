@@ -14,20 +14,18 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-      - name: Find project folder
-        run: |
-          F=$(find . -name package.json -not -path '*/node_modules/*' | head -1)
-          echo "Found: $F"
-          echo "APP_DIR=$(dirname "$F")" >> $GITHUB_ENV
       - run: npm install
-        working-directory: ${{ env.APP_DIR }}
+      - run: npx cap add android
+      - name: Add mic permission
+        run: |
+          F=android/app/src/main/AndroidManifest.xml
+          sed -i 's#<uses-permission android:name="android.permission.INTERNET" />#<uses-permission android:name="android.permission.INTERNET" />\n<uses-permission android:name="android.permission.RECORD_AUDIO" />#' $F
+          sed -i 's#</manifest>#<queries><intent><action android:name="android.speech.RecognitionService" /></intent></queries></manifest>#' $F
       - run: npx cap sync android
-        working-directory: ${{ env.APP_DIR }}
       - run: chmod +x android/gradlew
-        working-directory: ${{ env.APP_DIR }}
       - run: ./gradlew assembleDebug
-        working-directory: ${{ env.APP_DIR }}/android
+        working-directory: android
       - uses: actions/upload-artifact@v4
         with:
           name: OT-Planner-APK
-          path: ${{ env.APP_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
